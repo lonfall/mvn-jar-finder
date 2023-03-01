@@ -1,0 +1,18 @@
+# 应用名称
+spring:
+  application:
+    name: mvn-jar-finder
+  main:
+    banner-mode: off
+
+#日志级别配置
+logging:
+  level:
+    org.springframework: OFF  #Spring框架日志
+    com.lh.mvnjarfinder.MvnJarFinderApplication: OFF #启动类日志
+
+file:
+  search:
+    dir: D:/Documents/.m2/手动安装目录/ #仓库文件目录
+  maven:
+    repository: D:\Documents\.m2\repository #本地仓库地址
