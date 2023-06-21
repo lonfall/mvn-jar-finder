@@ -15,7 +15,7 @@
 
     file:
         search:
-            dir: D:/Documents/.m2/手动安装目录/ #仓库文件目录
+            dir: D:/Documents/.m2/手动安装目录/ #文件查找目录
         maven:
             repository: D:\Documents\.m2\repository #本地仓库地址
 
