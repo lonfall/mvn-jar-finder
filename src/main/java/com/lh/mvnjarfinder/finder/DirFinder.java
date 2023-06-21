@@ -9,8 +9,6 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * 自动查找输出maven入库语句
@@ -73,13 +71,17 @@ public class DirFinder {
                 return;
             }
             String groupId = findXmlPath(pomFile, "$project.groupId");
+            if (null == groupId) {
+                groupId = findXmlPath(pomFile, "$project.parent.groupId");
+            }
             String artifactId = findXmlPath(pomFile, "$project.artifactId");
             String version = findXmlPath(pomFile, "$project.version");
+            if (null == version) {
+                version = findXmlPath(pomFile, "$project.parent.version");
+            }
             if (null != version && version.startsWith("$")) {
                 version = findXmlPath(pomFile, "$project." + version.substring(2, version.length() - 1));
             }
-//            System.out.println("find maven file is jar:" + jarFileName + " pom:" + pomFileName);
-//            System.out.println("in dir: " + file.getPath());
             System.out.println("mvn install:install-file \"-Dmaven.repo.local=" + DirFinder.mvn_path + "\" \"-DgroupId=" + groupId + "\" \"-DartifactId=" + artifactId + "\" \"-Dversion=" + version + "\" \"-Dpackaging=jar\" \"-Dfile=" + jarFilePath + "\" \n");
         } else {
             System.out.println(file.getName() + " 不是目录");
@@ -103,38 +105,124 @@ public class DirFinder {
         // 获取pom文件内容
         StringBuffer pomStr = new StringBuffer();
         try (FileReader fileReader = new FileReader(pomFile)) {
-            char[] buffer = new char[1024];
-            while (fileReader.read(buffer) > 0) {
-                pomStr.append(buffer);
+            int data;
+            while ((data = fileReader.read()) != -1) {
+                pomStr.append((char) data);
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-
         // 获取xml路径值
-        StringBuilder sb = new StringBuilder();
+        StringBuffer sb = new StringBuffer();
         for (int i = 1; i < path.length(); i++) {
             if (path.charAt(i) != '.') {
                 sb.append(path.charAt(i));
             } else {
-                Pattern compile = Pattern.compile("<" + sb + "[^>]*>([\\s\\S]*?)</" + sb + ">");
-                Matcher matcher = compile.matcher(pomStr);
-                if (matcher.find()) {
-                    pomStr = new StringBuffer(matcher.group(1));
-                } else {
+                StringBuffer between = getBetween(pomStr, sb.toString());
+                if (between == null) {
                     return null;
                 }
+                pomStr = between;
                 sb.delete(0, sb.length());
             }
         }
-        Pattern compile = Pattern.compile("<" + sb + "[^>]*>([\\s\\S]*?)</" + sb + ">");
-        Matcher matcher = compile.matcher(pomStr);
-        if (matcher.find()) {
-            pomStr = new StringBuffer(matcher.group(1));
-        } else {
+        StringBuffer between = getBetween(pomStr, sb.toString());
+        if (between == null) {
             return null;
         }
+        pomStr = between;
         return pomStr.toString();
     }
 
+    /**
+     * 获取xml对应name中间的值
+     * 只获取最外层的
+     * 列如<a><b>1</b><a/><b>2</b>中name为b
+     * 只会判断<a><b>1</b></a>和<b>2</b>
+     * 最后获取的值为2
+     *
+     * @param pomStr
+     * @param name
+     * @return
+     */
+    private StringBuffer getBetween(StringBuffer pomStr, String name) {
+        if (null == pomStr) {
+            return null;
+        }
+        int index = 0;
+        int left_count = 0;
+        int right_count = 0;
+        while (index < pomStr.length()) {
+            if ("<".equals("" + pomStr.charAt(index))) {
+                StringBuffer open_name = new StringBuffer();
+                StringBuffer close_name = new StringBuffer();
+                StringBuffer between = new StringBuffer();
+                index++;
+                int l = 0, r = 0;
+                while (index < pomStr.length()) {
+                    if ("<".equals("" + pomStr.charAt(index))) {
+                        l++;
+                    }
+                    if (">".equals("" + pomStr.charAt(index))) {
+                        if (r == l) {
+                            index++;
+                            break;
+                        }
+                        r++;
+                    }
+                    open_name.append(pomStr.charAt(index));
+                    index++;
+                }
+                if (open_name.toString().startsWith("?")) {
+                } else if (open_name.toString().startsWith("!")) {
+                } else if (open_name.toString().endsWith("/")) {
+                } else if (open_name.toString().startsWith("/")) {
+                    right_count++;
+                } else {
+                    left_count++;
+                }
+                if (right_count == (left_count - 1) && open_name.toString().startsWith(name)) {
+                    while (index < pomStr.length()) {
+                        if ("<".equals("" + pomStr.charAt(index))) {
+                            index++;
+                            l = 0;
+                            r = 0;
+                            while (index < pomStr.length()) {
+                                if ("<".equals("" + pomStr.charAt(index))) {
+                                    l++;
+                                }
+                                if (">".equals("" + pomStr.charAt(index))) {
+                                    if (r == l) {
+                                        break;
+                                    }
+                                    r++;
+                                }
+                                close_name.append(pomStr.charAt(index));
+                                index++;
+                            }
+                            if (close_name.toString().startsWith("?")) {
+                            } else if (close_name.toString().startsWith("!")) {
+                            } else if (close_name.toString().endsWith("/")) {
+                            } else if (close_name.toString().startsWith("/")) {
+                                right_count++;
+                            } else {
+                                left_count++;
+                            }
+                            if (right_count == left_count && close_name.toString().startsWith("/" + name)) {
+                                return between;
+                            } else {
+                                between.append("<" + close_name);
+                                close_name.delete(0, close_name.length());
+                            }
+                        }
+                        between.append(pomStr.charAt(index));
+                        index++;
+                    }
+                }
+                open_name.delete(0, open_name.length());
+            }
+            index++;
+        }
+        return null;
+    }
 }
